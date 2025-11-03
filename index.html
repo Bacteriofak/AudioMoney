@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Ассистент доходов и расходов</title>
+  <meta name="theme-color" content="#2E7D32">
+  <link rel="manifest" href="manifest.json">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      text-align: center;
+      padding: 25px;
+      background: #f9f9f9;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #2E7D32;
+      margin-bottom: 30px;
+    }
+    button {
+      font-size: 1.3em;
+      padding: 16px 32px;
+      margin: 20px 0;
+      border: none;
+      border-radius: 14px;
+      background: #2E7D32;
+      color: white;
+      cursor: pointer;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    button:active {
+      transform: scale(0.98);
+    }
+    #status {
+      margin-top: 25px;
+      padding: 15px;
+      border-radius: 10px;
+      background: white;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+      min-height: 24px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎙️ Диктуйте доход или расход</h1>
+  <button id="start">Начать запись</button>
+  <div id="status">Примеры:<br>«расход 300 на кофе»<br>«доход 50000 зарплата»</div>
+
+  <script>
+    // 🔴 ВАЖНО: ваш рабочий URL (уже вставлен)
+    const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbx8K8NKtvJr6FejmN7qwUzHQm8rjCOdVKR0SyGI14sl7JnfjA3Ui3CxYL_AmUMwCP9k/exec';
+
+    const startBtn = document.getElementById('start');
+    const statusEl = document.getElementById('status');
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      statusEl.innerHTML = '❌ Голосовой ввод доступен только в Chrome (Android/ПК).';
+    } else {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'ru-RU';
+      recognition.interimResults = false;
+
+      startBtn.addEventListener('click', () => {
+        statusEl.innerHTML = '🎙️ Слушаю... Говорите чётко.';
+        recognition.start();
+      });
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript.trim();
+        statusEl.innerHTML = `Вы сказали: <b>"${transcript}"</b>`;
+
+        const lower = transcript.toLowerCase();
+        let type;
+
+        // Определяем тип операции
+        if (
+          lower.startsWith('доход') ||
+          lower.startsWith('доходы') ||
+          lower.includes('получил') ||
+          lower.includes('зарплата') ||
+          lower.includes('поступление') ||
+          lower.includes('аванс')
+        ) {
+          type = 'income';
+        } else if (
+          lower.startsWith('расход') ||
+          lower.startsWith('расходы') ||
+          lower.includes('потратил') ||
+          lower.includes('купил') ||
+          lower.includes('оплатил') ||
+          lower.includes('снял')
+        ) {
+          type = 'expense';
+        } else {
+          // По умолчанию — расход
+          type = 'expense';
+        }
+
+        // Ищем сумму
+        const match = transcript.match(/(\d+(?:\.\d+)?)/);
+        if (!match) {
+          statusEl.innerHTML += '<br>❌ Не найдена сумма. Скажите число.';
+          return;
+        }
+
+        const amount = parseFloat(match[1]);
+
+        // Удаляем служебные слова и сумму, оставляем категорию
+        let clean = transcript
+          .replace(/(доходы?|расходы?|получил|потратил|купил|оплатил|снял|зарплата|аванс|поступление|рублей?|₽)/gi, '')
+          .replace(match[0], '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        const category = clean || 'прочее';
+
+        sendToSheet(type, amount, category);
+      };
+
+      recognition.onerror = (event) => {
+        statusEl.innerHTML = `❌ Ошибка распознавания: ${event.error}`;
+        if (event.error === 'not-allowed') {
+          statusEl.innerHTML += '<br>Разрешите микрофон в настройках браузера.';
+        }
+      };
+    }
+
+    async function sendToSheet(type, amount, category) {
+      try {
+        const url = `${WEB_APP_URL}?type=${encodeURIComponent(type)}&amount=${encodeURIComponent(amount)}&category=${encodeURIComponent(category)}`;
+        statusEl.innerHTML = 'Отправляю данные в таблицу...';
+
+        const response = await fetch(url);
+        const result = await response.json();
+
+        if (result.status === 'ok') {
+          const label = type === 'income' ? '✅ 💰 Доход' : '✅ 💳 Расход';
+          statusEl.innerHTML = `${label} записан!<br><b>${amount} ₽</b> — ${result.category}<br>Лист: ${result.sheet}`;
+        } else {
+          statusEl.innerHTML = `❌ Ошибка: ${result.error || 'сервер не ответил'}`;
+        }
+      } catch (err) {
+        statusEl.innerHTML = `❌ Ошибка сети: ${err.message}`;
+      }
+    }
+  </script>
+</body>
+</html>

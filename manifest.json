@@ -1,0 +1,8 @@
+{
+  "name": "Ассистент расходов",
+  "short_name": "Расходы",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f9f9f9",
+  "theme_color": "#2E7D32"
+}
