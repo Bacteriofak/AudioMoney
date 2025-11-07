@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Ассистент доходов и расходов</title>
+  <title>Ассистент финансов</title>
   <meta name="theme-color" content="#2E7D32">
   <link rel="manifest" href="manifest.json">
   <style>
@@ -51,6 +51,22 @@
       box-shadow: 0 2px 4px rgba(0,0,0,0.05);
       min-height: 24px;
     }
+    .guide {
+      margin-top: 30px;
+      padding: 15px;
+      background: #e8f5e9;
+      border-radius: 10px;
+      font-size: 0.95em;
+      line-height: 1.5;
+    }
+    .guide h3 {
+      margin-top: 0;
+      color: #1B5E20;
+    }
+    .example {
+      font-weight: bold;
+      color: #2E7D32;
+    }
   </style>
 </head>
 <body>
@@ -60,13 +76,31 @@
     <button id="start">🎙️ Диктовать</button>
   </div>
 
-  <textarea id="transcriptInput" placeholder="Или введите вручную: расход 500 на кофе"></textarea>
+  <textarea id="transcriptInput" placeholder="Например: общие 3000 бензин"></textarea>
 
   <div class="controls">
     <button id="sendBtn">📤 Отправить в таблицу</button>
   </div>
 
-  <div id="status">Говорите: «доход 30000 зарплата» или «расход 800 продукты»</div>
+  <div id="status">Говорите или введите фразу (см. инструкцию ниже)</div>
+
+  <!-- Памятка -->
+  <div class="guide">
+    <h3>📝 Как правильно заполнять</h3>
+    <p>Начните фразу с одного из ключевых слов:</p>
+    <ul>
+      <li><span class="example">расход</span> — для личных трат → колонки <b>A, B, C</b> (с 6-й строки)</li>
+      <li><span class="example">доход</span> — для поступлений → колонки <b>J, K, L</b> (с 6-й строки)</li>
+      <li><span class="example">общие</span> — для общих расходов → колонки <b>E, F, G</b> (с 30-й строки)</li>
+    </ul>
+    <p><b>Примеры:</b></p>
+    <ul>
+      <li><span class="example">расход 450 на обед</span></li>
+      <li><span class="example">доход 85000 зарплата</span></li>
+      <li><span class="example">общие 3000 бензин</span></li>
+    </ul>
+    <p>Можно вводить **вручную** — просто напишите в поле выше.</p>
+  </div>
 
   <script>
     const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbx8K8NKtvJr6FejmN7qwUzHQm8rjCOdVKR0SyGI14sl7JnfjA3Ui3CxYL_AmUMwCP9k/exec';
@@ -76,7 +110,7 @@
     const inputEl = document.getElementById('transcriptInput');
     const statusEl = document.getElementById('status');
 
-    // === Голосовой ввод ===
+    // Голосовой ввод
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
@@ -91,7 +125,7 @@
       recognition.onresult = (event) => {
         const transcript = event.results[0][0].transcript.trim();
         inputEl.value = transcript;
-        statusEl.innerHTML = `Распознано: <b>"${transcript}"</b>. Проверьте и нажмите «Отправить».`;
+        statusEl.innerHTML = `Распознано: <b>"${transcript}"</b>. Проверьте и отправьте.`;
       };
 
       recognition.onerror = (event) => {
@@ -99,65 +133,76 @@
       };
     } else {
       startBtn.disabled = true;
-      startBtn.title = "Голосовой ввод работает только в Chrome";
+      startBtn.title = "Работает только в Chrome";
     }
 
-    // === Отправка в таблицу ===
+    // Отправка
     sendBtn.addEventListener('click', () => {
       const text = inputEl.value.trim();
       if (!text) {
-        statusEl.textContent = '⚠️ Поле пустое. Сначала диктуйте или введите текст.';
+        statusEl.textContent = '⚠️ Поле пустое.';
         return;
       }
 
-      // Анализ текста
       const lower = text.toLowerCase();
-      const type = 
-        (lower.includes('доход') || lower.includes('получил') || lower.includes('зарплата')) ? 'income' : 'expense';
+      let type;
 
-      // Извлечение суммы (цифры или простые слова)
+      if (lower.startsWith('доход') || lower.includes('получил') || lower.includes('зарплата')) {
+        type = 'income';
+      } else if (lower.startsWith('расход') || lower.includes('потратил') || lower.includes('купил')) {
+        type = 'expense';
+      } else if (lower.startsWith('общие')) {
+        type = 'common';
+      } else {
+        // Если не указан тип — по умолчанию расход
+        type = 'expense';
+      }
+
+      // Сумма
       let amount = null;
       const digitMatch = text.match(/(\d+(?:\.\d+)?)/);
       if (digitMatch) {
         amount = parseFloat(digitMatch[0]);
       } else {
-        // Очень простой парсер для "пять тысяч" → 5000
+        // Простые слова (можно расширить)
         if (lower.includes('пять тысяч')) amount = 5000;
         else if (lower.includes('три тысячи')) amount = 3000;
         else if (lower.includes('десять тысяч')) amount = 10000;
-        // Можно добавить больше по необходимости
       }
 
       if (amount === null || isNaN(amount)) {
-        statusEl.innerHTML = '❌ Не найдена сумма. Укажите число (например, 5000).';
+        statusEl.innerHTML = '❌ Укажите сумму цифрами (например, 3000).';
         return;
       }
 
-      // Извлечение категории
+      // Категория — удаляем служебные слова
       let category = text
-        .replace(/(доходы?|расходы?|получил|потратил|купил|оплатил|зарплата|рублей?|₽|тысяч|тысяча)/gi, '')
+        .replace(/(доходы?|расходы?|общие|получил|потратил|купил|зарплата|рублей?|₽|тысяч)/gi, '')
         .replace(/\d+/g, '')
         .replace(/\s+/g, ' ')
         .trim() || 'прочее';
 
-      // Отправка
       sendToSheet(type, amount, category);
     });
 
     async function sendToSheet(type, amount, category) {
       try {
         const url = `${WEB_APP_URL}?type=${encodeURIComponent(type)}&amount=${encodeURIComponent(amount)}&category=${encodeURIComponent(category)}`;
-        statusEl.textContent = '📤 Отправляю в таблицу...';
+        statusEl.textContent = '📤 Отправляю...';
 
         const response = await fetch(url);
         const result = await response.json();
 
         if (result.status === 'ok') {
-          const label = type === 'income' ? '✅ 💰 Доход' : '✅ 💳 Расход';
-          statusEl.innerHTML = `${label} записан!<br><b>${amount} ₽</b> — ${result.category}`;
-          inputEl.value = ''; // очищаем поле
+          const labels = {
+            income: '✅ 💰 Доход',
+            expense: '✅ 💳 Расход',
+            common: '✅ 🏠 Общие'
+          };
+          statusEl.innerHTML = `${labels[result.type]} записан!<br><b>${amount} ₽</b> — ${result.category}`;
+          inputEl.value = '';
         } else {
-          statusEl.innerHTML = `❌ Ошибка: ${result.error || 'сервер не ответил'}`;
+          statusEl.innerHTML = `❌ Ошибка: ${result.error || 'неизвестно'}`;
         }
       } catch (err) {
         statusEl.innerHTML = `❌ Ошибка сети: ${err.message}`;
