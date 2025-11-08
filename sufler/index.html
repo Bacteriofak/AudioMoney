@@ -72,6 +72,7 @@
       height: 100%;
       object-fit: cover;
       background: #000;
+      transform-origin: center;
     }
 
     /* Рамки для режимов */
@@ -194,7 +195,6 @@
     <div id="text-content"></div>
   </div>
 
-  <!-- Панель настроек камеры (только на ПК) -->
   <div id="camera-settings">
     <h3>Настройки камеры</h3>
     <div id="camera-settings-content"></div>
@@ -204,7 +204,6 @@
     <button id="backBtn">← Назад</button>
     <button id="recordBtn">⏺️ Записать</button>
     <button id="stopBtn" disabled>⏹️ Остановить</button>
-    <!-- Кнопка настроек (только на ПК) -->
     <button id="cameraSettingsBtn" style="display: none;">🎥 Камера</button>
 
     <div class="slider-group">
@@ -231,6 +230,18 @@
         <option value="1:1">Квадрат (Instagram)</option>
       </select>
     </div>
+    <!-- Выбор разрешения (только на ПК) -->
+    <div class="slider-group" id="resolution-control" style="display: none;">
+      <label>Качество:</label>
+      <select id="resolution">
+        <option value="640,360">360p (640×360)</option>
+        <option value="854,480">480p (854×480)</option>
+        <option value="1280,720">720p (1280×720)</option>
+        <option value="1920,1080" selected>1080p (1920×1080)</option>
+        <option value="2560,1440">1440p (2560×1440)</option>
+        <option value="3840,2160">4K (3840×2160)</option>
+      </select>
+    </div>
   </div>
 </div>
 
@@ -243,7 +254,8 @@
   let recordedChunks = [];
   let scrollInterval = null;
   let isRecording = false;
-  let videoTrack = null; // ← для настроек камеры
+  let videoTrack = null;
+  let currentResolution = isMobile ? [1280, 720] : [1920, 1080]; // [width, height]
 
   // DOM
   const setupScreen = document.getElementById('setup-screen');
@@ -267,10 +279,13 @@
   const cameraSettingsBtn = document.getElementById('cameraSettingsBtn');
   const cameraSettings = document.getElementById('camera-settings');
   const cameraSettingsContent = document.getElementById('camera-settings-content');
+  const resolutionControl = document.getElementById('resolution-control');
+  const resolutionSelect = document.getElementById('resolution');
 
-  // Показываем кнопку настроек только на ПК
+  // Показываем элементы только на ПК
   if (!isMobile) {
     cameraSettingsBtn.style.display = 'inline-block';
+    resolutionControl.style.display = 'flex';
   }
 
   // Сохранённые тексты
@@ -311,21 +326,20 @@
     stopCamera();
   });
 
-  // === Камера с адаптивным разрешением ===
+  // === Запуск камеры с текущим разрешением ===
   async function startCamera() {
     stopCamera();
-    const videoConstraints = isMobile
-      ? { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
-      : { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } };
-
-    const constraints = { video: videoConstraints, audio: true };
+    const [width, height] = currentResolution;
+    const constraints = {
+      video: { facingMode: 'user', width: { ideal: width }, height: { ideal: height } },
+      audio: true
+    };
 
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
       camera.srcObject = stream;
-      videoTrack = stream.getVideoTracks()[0]; // ← сохраняем трек
+      videoTrack = stream.getVideoTracks()[0];
       
-      // На ПК пытаемся загрузить настройки камеры
       if (!isMobile && videoTrack && typeof videoTrack.getCapabilities === 'function') {
         loadCameraSettings();
       }
@@ -358,7 +372,6 @@
       cameraSettingsContent.innerHTML = '';
 
       const supported = ['zoom', 'focusDistance', 'exposureCompensation', 'brightness', 'contrast', 'saturation', 'whiteBalanceMode'];
-
       let hasControls = false;
 
       supported.forEach(prop => {
@@ -378,10 +391,9 @@
           div.querySelector('input').addEventListener('input', async (e) => {
             try {
               const val = parseFloat(e.target.value);
-              const constraints = { advanced: [{ [prop]: val }] };
-              await videoTrack.applyConstraints(constraints);
+              await videoTrack.applyConstraints({ advanced: [{ [prop]: val }] });
             } catch (err) {
-              console.warn('Не удалось применить настройку', prop, err);
+              console.warn('Не удалось применить', prop, err);
             }
           });
         }
@@ -392,12 +404,18 @@
       }
     } catch (err) {
       console.warn('Настройки камеры недоступны', err);
-      cameraSettingsBtn.style.display = 'none';
     }
   }
 
   cameraSettingsBtn.addEventListener('click', () => {
     cameraSettings.classList.toggle('active');
+  });
+
+  // === Смена разрешения ===
+  resolutionSelect.addEventListener('change', () => {
+    const [w, h] = resolutionSelect.value.split(',').map(Number);
+    currentResolution = [w, h];
+    startCamera(); // Перезапуск камеры с новым разрешением
   });
 
   // === Рамки-гиды ===
