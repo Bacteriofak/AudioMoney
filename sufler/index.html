@@ -267,13 +267,20 @@
     stopCamera();
   });
 
-  // === Камера: всегда 16:9 + аудио ===
+  // === Камера: адаптивное разрешение ===
   async function startCamera() {
     stopCamera();
+    
+    // Адаптивные настройки: 720p на мобиле, 1080p на ПК
+    const videoConstraints = isMobile
+      ? { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
+      : { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } };
+
     const constraints = {
-      video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } },
+      video: videoConstraints,
       audio: true
     };
+
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
       camera.srcObject = stream;
