@@ -184,7 +184,7 @@
     </div>
     <div class="slider-group">
       <label>Ширина:</label>
-      <input type="range" id="textWidth" min="50" max="100" value="90">
+      <input type="range" id="textWidth" min="20" max="100" value="80">
     </div>
     <div class="slider-group">
       <label>Режим:</label>
@@ -256,7 +256,7 @@
     applyTextStyles();
     setupScreen.classList.remove('active');
     recordingScreen.classList.add('active');
-    startCamera(); // Всегда 16:9 разрешение
+    startCamera();
     updateGuides();
   });
 
@@ -267,21 +267,20 @@
     stopCamera();
   });
 
-  // === Камера: всегда запрашиваем 16:9 + аудио ===
+  // === Камера: всегда 16:9 + аудио ===
   async function startCamera() {
     stopCamera();
     const constraints = {
       video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } },
-      audio: true // ← Запрос микрофона
+      audio: true
     };
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
       camera.srcObject = stream;
-      // Текст статичен — прокрутка НЕ запускается
     } catch (err) {
       let msg = 'Не удалось получить доступ к камере/микрофону.';
       if (err.name === 'NotFoundError') msg = 'Камера или микрофон не найдены.';
-      if (err.name === 'NotAllowedError') msg = 'Доступ к камере/микрофону запрещён. Разрешите в настройках браузера.';
+      if (err.name === 'NotAllowedError') msg = 'Доступ запрещён. Разрешите в настройках браузера.';
       alert(msg + '\n\nОшибка: ' + err.message);
     }
   }
@@ -297,7 +296,7 @@
     }
   }
 
-  // === Управление рамками ===
+  // === Рамки-гиды ===
   function updateGuides() {
     guide916.style.display = 'none';
     guide11.style.display = 'none';
@@ -322,7 +321,7 @@
   }
 
   aspectRatioSelect.addEventListener('change', updateGuides);
-  window.addEventListener('resize', updateGuides); // на случай изменения окна
+  window.addEventListener('resize', updateGuides);
 
   // === Стили текста ===
   function applyTextStyles() {
@@ -333,7 +332,7 @@
   fontSizeControl.addEventListener('input', applyTextStyles);
   textWidthControl.addEventListener('input', applyTextStyles);
 
-  // === Прокрутка (запускается ТОЛЬКО при записи) ===
+  // === Прокрутка (только при записи) ===
   function startScrolling() {
     if (scrollInterval) clearInterval(scrollInterval);
     const speed = parseFloat(speedControl.value);
@@ -352,7 +351,6 @@
 
   textPositionControl.addEventListener('input', () => {
     if (!isRecording) {
-      // Обновить статичную позицию
       const container = document.getElementById('overlay-text-container');
       const posPercent = parseFloat(textPositionControl.value);
       const topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
@@ -367,13 +365,11 @@
       return;
     }
 
-    // Проверка: есть ли аудио в потоке?
     const hasAudio = stream.getAudioTracks().length > 0;
     if (!hasAudio) {
       if (!confirm('Микрофон недоступен. Записать только видео?')) return;
     }
 
-    // MIME тип
     const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=h264')
       ? 'video/mp4;codecs=h264'
       : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
@@ -401,7 +397,6 @@
         clearInterval(scrollInterval);
         scrollInterval = null;
       }
-      // Вернуть текст в статичное положение
       textPositionControl.dispatchEvent(new Event('input'));
     };
 
@@ -411,7 +406,7 @@
     recordBtn.textContent = '🔴 Идёт запись...';
     recordBtn.disabled = true;
     stopBtn.disabled = false;
-    startScrolling(); // ← прокрутка начинается здесь!
+    startScrolling();
   });
 
   stopBtn.addEventListener('click', () => {
