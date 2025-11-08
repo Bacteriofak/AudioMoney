@@ -18,7 +18,7 @@
     .screen { display: none; height: 100%; }
     .screen.active { display: flex; flex-direction: column; }
 
-    /* --- Setup Screen --- */
+    /* Setup Screen */
     #setup-screen {
       padding: 20px;
       gap: 20px;
@@ -65,7 +65,7 @@
       font-size: 16px;
     }
 
-    /* --- Recording Screen --- */
+    /* Recording Screen */
     #recording-screen { position: relative; }
     #camera {
       width: 100%;
@@ -74,17 +74,17 @@
       background: #000;
     }
 
-    /* Рамка для 9:16 на десктопе */
-    #aspect-guide {
+    /* Рамки для режимов */
+    .aspect-guide {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
       pointer-events: none;
-      display: none;
-      border: 2px dashed rgba(255,255,255,0.3);
       box-sizing: border-box;
+      border: 2px dashed rgba(255,255,255,0.4);
+      display: none;
     }
 
     #overlay-text-container {
@@ -96,7 +96,7 @@
       pointer-events: none;
       display: flex;
       justify-content: center;
-      align-items: flex-start; /* текст сверху! */
+      align-items: flex-start;
       padding-top: 20px;
     }
     #text-content {
@@ -104,7 +104,6 @@
       background: rgba(0, 0, 0, 0.6);
       padding: 16px;
       border-radius: 12px;
-      max-width: 90%;
       text-align: center;
       line-height: 1.6;
       transform: translateY(0);
@@ -133,7 +132,7 @@
       width: 100px;
     }
 
-    /* Стиль во время записи */
+    /* Индикатор записи */
     .recording {
       background: #e53935 !important;
       animation: pulse 1.5s infinite;
@@ -161,7 +160,8 @@
 <!-- Recording Screen -->
 <div id="recording-screen" class="screen">
   <video id="camera" autoplay playsinline muted></video>
-  <div id="aspect-guide"></div>
+  <div id="guide-9-16" class="aspect-guide"></div>
+  <div id="guide-1-1" class="aspect-guide"></div>
   <div id="overlay-text-container">
     <div id="text-content"></div>
   </div>
@@ -183,10 +183,14 @@
       <input type="range" id="textPosition" min="0" max="100" value="0">
     </div>
     <div class="slider-group">
+      <label>Ширина:</label>
+      <input type="range" id="textWidth" min="50" max="100" value="90">
+    </div>
+    <div class="slider-group">
       <label>Режим:</label>
       <select id="aspectRatio">
-        <option value="9:16">Вертикальный (Shorts/Reels)</option>
         <option value="16:9" selected>Горизонтальный (YouTube)</option>
+        <option value="9:16">Вертикальный (Shorts/Reels)</option>
         <option value="1:1">Квадрат (Instagram)</option>
       </select>
     </div>
@@ -194,11 +198,7 @@
 </div>
 
 <script>
-  // === Определение устройства ===
   const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  console.log('Устройство:', isMobile ? 'Мобильное' : 'ПК');
-
-  // === Данные ===
   const savedTexts = JSON.parse(localStorage.getItem('teleprompterTexts') || '[]');
   let currentText = '';
   let stream = null;
@@ -207,7 +207,7 @@
   let scrollInterval = null;
   let isRecording = false;
 
-  // === DOM ===
+  // DOM
   const setupScreen = document.getElementById('setup-screen');
   const recordingScreen = document.getElementById('recording-screen');
   const inputText = document.getElementById('input-text');
@@ -220,26 +220,25 @@
   const speedControl = document.getElementById('speed');
   const fontSizeControl = document.getElementById('fontSize');
   const textPositionControl = document.getElementById('textPosition');
+  const textWidthControl = document.getElementById('textWidth');
   const aspectRatioSelect = document.getElementById('aspectRatio');
-  const aspectGuide = document.getElementById('aspect-guide');
-  const loadSampleBtn = document.getElementById('load-sample');
-  const goToRecordingBtn = document.getElementById('go-to-recording');
+  const guide916 = document.getElementById('guide-9-16');
+  const guide11 = document.getElementById('guide-1-1');
 
-  // === Сохранённые тексты ===
+  // Сохранённые тексты
   function renderSavedTexts() {
     savedList.innerHTML = '';
-    savedTexts.forEach((text, i) => {
+    savedTexts.forEach(text => {
       const btn = document.createElement('button');
       btn.textContent = text.substring(0, 50) + (text.length > 50 ? '...' : '');
-      btn.onclick = () => { inputText.value = text; };
+      btn.onclick = () => inputText.value = text;
       savedList.appendChild(btn);
     });
   }
   renderSavedTexts();
 
-  // === Пример текста ===
   loadSampleBtn.addEventListener('click', () => {
-    inputText.value = `Добро пожаловать в телесуфлер Pro!\nЭтот текст появляется сверху и плавно уходит вверх.\nВы можете регулировать скорость, размер и позицию под себя.`;
+    inputText.value = `Добро пожаловать в телесуфлер Pro!\nТекст теперь статичен до начала записи.\nПосле нажатия "Запись" он начнёт плавно скроллиться вверх.`;
   });
 
   // === Переход к записи ===
@@ -252,15 +251,11 @@
       renderSavedTexts();
     }
     textContent.textContent = currentText;
-    textContent.style.fontSize = fontSizeControl.value + 'px';
+    applyTextStyles();
     setupScreen.classList.remove('active');
     recordingScreen.classList.add('active');
-    if (isMobile) {
-      detectOrientationAndStart();
-      window.addEventListener('orientationchange', detectOrientationAndStart);
-    } else {
-      startCamera(aspectRatioSelect.value);
-    }
+    startCamera(); // Всегда 16:9 разрешение
+    updateGuides();
   });
 
   // === Назад ===
@@ -268,36 +263,24 @@
     recordingScreen.classList.remove('active');
     setupScreen.classList.add('active');
     stopCamera();
-    if (isMobile) {
-      window.removeEventListener('orientationchange', detectOrientationAndStart);
-    }
   });
 
-  // === Ориентация на мобильных ===
-  function detectOrientationAndStart() {
-    if (!isMobile) return;
-    const angle = window.orientation || 0;
-    // Портрет: 0, 180 → 9:16; Ландскейп: 90, -90 → 16:9
-    const isPortrait = angle === 0 || angle === 180;
-    aspectRatioSelect.value = isPortrait ? '9:16' : '16:9';
-    startCamera(aspectRatioSelect.value);
-  }
-
-  // === Запуск камеры ===
-  async function startCamera(ratio) {
+  // === Камера: всегда запрашиваем 16:9 + аудио ===
+  async function startCamera() {
     stopCamera();
-    const [w, h] = parseAspectRatio(ratio);
     const constraints = {
-      video: { facingMode: 'user', width: { ideal: w }, height: { ideal: h } },
-      audio: true
+      video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: true // ← Запрос микрофона
     };
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
       camera.srcObject = stream;
-      applyAspectRatioUI(ratio);
-      startScrolling();
+      // Текст статичен — прокрутка НЕ запускается
     } catch (err) {
-      alert('Ошибка камеры/микрофона: ' + err.message);
+      let msg = 'Не удалось получить доступ к камере/микрофону.';
+      if (err.name === 'NotFoundError') msg = 'Камера или микрофон не найдены.';
+      if (err.name === 'NotAllowedError') msg = 'Доступ к камере/микрофону запрещён. Разрешите в настройках браузера.';
+      alert(msg + '\n\nОшибка: ' + err.message);
     }
   }
 
@@ -306,94 +289,94 @@
       stream.getTracks().forEach(t => t.stop());
       stream = null;
     }
-    if (scrollInterval) clearInterval(scrollInterval);
-  }
-
-  function parseAspectRatio(ratio) {
-    if (ratio === '9:16') return [1080, 1920];
-    if (ratio === '16:9') return [1920, 1080];
-    if (ratio === '1:1') return [1080, 1080];
-    return [1280, 720];
-  }
-
-  // === Визуальное отображение соотношения ===
-  function applyAspectRatioUI(ratio) {
-    aspectGuide.style.display = 'none';
-    camera.style.objectFit = 'cover';
-
-    if (!isMobile && ratio === '9:16') {
-      // На ПК в 9:16 — показываем рамку-гид
-      aspectGuide.style.display = 'block';
-      // Рассчитываем отступы для 9:16 в пределах 16:9 экрана
-      const containerRatio = window.innerWidth / window.innerHeight;
-      const targetRatio = 9 / 16;
-      if (containerRatio > targetRatio) {
-        // Широкий экран → чёрные полосы по бокам
-        const targetWidth = window.innerHeight * targetRatio;
-        const marginLeft = (window.innerWidth - targetWidth) / 2;
-        aspectGuide.style.marginLeft = marginLeft + 'px';
-        aspectGuide.style.width = targetWidth + 'px';
-        aspectGuide.style.height = '100%';
-      } else {
-        // Узкий экран → чёрные полосы сверху/снизу
-        const targetHeight = window.innerWidth / targetRatio;
-        const marginTop = (window.innerHeight - targetHeight) / 2;
-        aspectGuide.style.marginTop = marginTop + 'px';
-        aspectGuide.style.height = targetHeight + 'px';
-        aspectGuide.style.width = '100%';
-      }
+    if (scrollInterval) {
+      clearInterval(scrollInterval);
+      scrollInterval = null;
     }
   }
 
-  aspectRatioSelect.addEventListener('change', () => {
-    if (!isMobile) {
-      startCamera(aspectRatioSelect.value);
+  // === Управление рамками ===
+  function updateGuides() {
+    guide916.style.display = 'none';
+    guide11.style.display = 'none';
+    const ratio = aspectRatioSelect.value;
+    if (ratio === '9:16') {
+      guide916.style.display = 'block';
+      const targetW = window.innerHeight * (9 / 16);
+      const ml = (window.innerWidth - targetW) / 2;
+      guide916.style.marginLeft = ml + 'px';
+      guide916.style.width = targetW + 'px';
+      guide916.style.height = '100%';
+    } else if (ratio === '1:1') {
+      guide11.style.display = 'block';
+      const size = Math.min(window.innerWidth, window.innerHeight);
+      const ml = (window.innerWidth - size) / 2;
+      const mt = (window.innerHeight - size) / 2;
+      guide11.style.marginLeft = ml + 'px';
+      guide11.style.marginTop = mt + 'px';
+      guide11.style.width = size + 'px';
+      guide11.style.height = size + 'px';
     }
-  });
+  }
 
-  // === Прокрутка текста (сверху вниз) ===
+  aspectRatioSelect.addEventListener('change', updateGuides);
+  window.addEventListener('resize', updateGuides); // на случай изменения окна
+
+  // === Стили текста ===
+  function applyTextStyles() {
+    textContent.style.fontSize = fontSizeControl.value + 'px';
+    textContent.style.maxWidth = textWidthControl.value + '%';
+  }
+
+  fontSizeControl.addEventListener('input', applyTextStyles);
+  textWidthControl.addEventListener('input', applyTextStyles);
+
+  // === Прокрутка (запускается ТОЛЬКО при записи) ===
   function startScrolling() {
     if (scrollInterval) clearInterval(scrollInterval);
     const speed = parseFloat(speedControl.value);
     const container = document.getElementById('overlay-text-container');
-    const posPercent = parseFloat(textPositionControl.value); // 0–100
-    // Начинаем от верха: чем больше posPercent, тем ниже начальная позиция
+    const posPercent = parseFloat(textPositionControl.value);
     let topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
 
     scrollInterval = setInterval(() => {
       topOffset -= speed;
       textContent.style.transform = `translateY(${topOffset}px)`;
-      // Сброс, когда текст полностью ушёл вверх
       if (topOffset < -textContent.scrollHeight * 2) {
         topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
       }
     }, 50);
   }
 
-  [speedControl, fontSizeControl, textPositionControl].forEach(el =>
-    el.addEventListener('input', () => {
-      if (el === fontSizeControl) textContent.style.fontSize = el.value + 'px';
-      startScrolling();
-    })
-  );
+  textPositionControl.addEventListener('input', () => {
+    if (!isRecording) {
+      // Обновить статичную позицию
+      const container = document.getElementById('overlay-text-container');
+      const posPercent = parseFloat(textPositionControl.value);
+      const topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
+      textContent.style.transform = `translateY(${topOffset}px)`;
+    }
+  });
 
   // === Запись ===
   recordBtn.addEventListener('click', () => {
-    if (!stream) return;
-
-    // Попытка использовать MP4
-    const mimeTypeMP4 = 'video/mp4;codecs=h264';
-    const mimeTypeWebM = 'video/webm;codecs=vp9';
-    let mimeType = mimeTypeMP4;
-
-    if (!MediaRecorder.isTypeSupported(mimeTypeMP4)) {
-      if (MediaRecorder.isTypeSupported(mimeTypeWebM)) {
-        mimeType = mimeTypeWebM;
-        console.warn('MP4 не поддерживается, используется WebM');
-      } else {
-        mimeType = 'video/webm';
-      }
+    if (!stream) {
+      alert('Сначала дождитесь загрузки камеры.');
+      return;
     }
+
+    // Проверка: есть ли аудио в потоке?
+    const hasAudio = stream.getAudioTracks().length > 0;
+    if (!hasAudio) {
+      if (!confirm('Микрофон недоступен. Записать только видео?')) return;
+    }
+
+    // MIME тип
+    const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=h264')
+      ? 'video/mp4;codecs=h264'
+      : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+        ? 'video/webm;codecs=vp9'
+        : 'video/webm';
 
     recordedChunks = [];
     mediaRecorder = new MediaRecorder(stream, { mimeType });
@@ -412,6 +395,12 @@
       recordBtn.textContent = '⏺️ Записать';
       recordBtn.disabled = false;
       stopBtn.disabled = true;
+      if (scrollInterval) {
+        clearInterval(scrollInterval);
+        scrollInterval = null;
+      }
+      // Вернуть текст в статичное положение
+      textPositionControl.dispatchEvent(new Event('input'));
     };
 
     mediaRecorder.start();
@@ -420,6 +409,7 @@
     recordBtn.textContent = '🔴 Идёт запись...';
     recordBtn.disabled = true;
     stopBtn.disabled = false;
+    startScrolling(); // ← прокрутка начинается здесь!
   });
 
   stopBtn.addEventListener('click', () => {
@@ -429,12 +419,7 @@
   });
 
   // === Очистка ===
-  window.addEventListener('beforeunload', () => {
-    stopCamera();
-    if (isMobile) {
-      window.removeEventListener('orientationchange', detectOrientationAndStart);
-    }
-  });
+  window.addEventListener('beforeunload', stopCamera);
 </script>
 </body>
 </html>
