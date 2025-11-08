@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Телесуфлер Pro</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #000;
+      color: white;
+      height: 100dvh;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Общие экраны */
+    .screen { display: none; height: 100%; }
+    .screen.active { display: flex; flex-direction: column; }
+
+    /* Экран настройки */
+    #setup-screen {
+      padding: 20px;
+      gap: 20px;
+    }
+    textarea {
+      width: 100%;
+      height: 40dvh;
+      padding: 12px;
+      font-size: 18px;
+      border: 1px solid #444;
+      border-radius: 8px;
+      background: #111;
+      color: white;
+      resize: none;
+    }
+    .saved-texts {
+      max-height: 30dvh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .saved-texts button {
+      background: #333;
+      border: none;
+      color: white;
+      padding: 8px;
+      border-radius: 6px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .controls-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      background: #1e88e5;
+      color: white;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    /* Экран записи */
+    #recording-screen { position: relative; }
+    #camera {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #000;
+    }
+    #overlay-text-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+    }
+    #text-content {
+      color: white;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 16px;
+      border-radius: 12px;
+      max-width: 90%;
+      text-align: center;
+      line-height: 1.6;
+      transform: translateY(0);
+    }
+    #recording-controls {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      z-index: 10;
+    }
+    .slider-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+    }
+    input[type="range"] {
+      width: 100px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Экран настройки -->
+<div id="setup-screen" class="screen active">
+  <h2>Текст для телесуфлера</h2>
+  <textarea id="input-text" placeholder="Введите или вставьте ваш текст здесь..."></textarea>
+  
+  <div class="saved-texts" id="saved-list"></div>
+
+  <div class="controls-row">
+    <button id="load-sample">Загрузить пример</button>
+    <button id="go-to-recording">Начать запись</button>
+  </div>
+</div>
+
+<!-- Экран записи -->
+<div id="recording-screen" class="screen">
+  <video id="camera" autoplay playsinline muted></video>
+  <div id="overlay-text-container">
+    <div id="text-content"></div>
+  </div>
+  <div id="recording-controls">
+    <button id="backBtn">← Назад</button>
+    <button id="recordBtn">⏺️ Записать</button>
+    <button id="stopBtn" disabled>⏹️ Остановить</button>
+
+    <div class="slider-group">
+      <label>Скорость:</label>
+      <input type="range" id="speed" min="0.5" max="5" step="0.5" value="1">
+    </div>
+    <div class="slider-group">
+      <label>Размер:</label>
+      <input type="range" id="fontSize" min="16" max="64" value="32">
+    </div>
+    <div class="slider-group">
+      <label>Позиция:</label>
+      <input type="range" id="textPosition" min="0" max="100" value="70">
+    </div>
+    <div class="slider-group">
+      <label>Режим:</label>
+      <select id="aspectRatio">
+        <option value="9:16">Вертикальный (Shorts/Reels)</option>
+        <option value="16:9" selected>Горизонтальный (YouTube)</option>
+        <option value="1:1">Квадрат (Instagram)</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<script>
+  // --- Настройки и данные ---
+  const savedTexts = JSON.parse(localStorage.getItem('teleprompterTexts') || '[]');
+  let currentText = '';
+  let stream = null;
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let scrollInterval = null;
+
+  // --- DOM элементы ---
+  const setupScreen = document.getElementById('setup-screen');
+  const recordingScreen = document.getElementById('recording-screen');
+  const inputText = document.getElementById('input-text');
+  const savedList = document.getElementById('saved-list');
+  const camera = document.getElementById('camera');
+  const textContent = document.getElementById('text-content');
+  const backBtn = document.getElementById('backBtn');
+  const recordBtn = document.getElementById('recordBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const speedControl = document.getElementById('speed');
+  const fontSizeControl = document.getElementById('fontSize');
+  const textPositionControl = document.getElementById('textPosition');
+  const aspectRatioSelect = document.getElementById('aspectRatio');
+  const loadSampleBtn = document.getElementById('load-sample');
+  const goToRecordingBtn = document.getElementById('go-to-recording');
+
+  // --- Загрузка сохранённых текстов ---
+  function renderSavedTexts() {
+    savedList.innerHTML = '';
+    savedTexts.forEach((text, i) => {
+      const btn = document.createElement('button');
+      btn.textContent = text.substring(0, 50) + (text.length > 50 ? '...' : '');
+      btn.onclick = () => {
+        inputText.value = text;
+      };
+      savedList.appendChild(btn);
+    });
+  }
+  renderSavedTexts();
+
+  // --- Пример текста ---
+  loadSampleBtn.addEventListener('click', () => {
+    inputText.value = `Добро пожаловать в телесуфлер Pro! 
+Этот текст будет медленно скроллиться вверх, 
+помогая вам читать вслух без запинок. 
+Попробуйте изменить скорость, размер шрифта 
+и позицию текста под себя.`;
+  });
+
+  // --- Начать запись ---
+  goToRecordingBtn.addEventListener('click', () => {
+    currentText = inputText.value.trim();
+    if (!currentText) {
+      alert('Пожалуйста, введите текст.');
+      return;
+    }
+    // Сохраняем текст в localStorage
+    if (!savedTexts.includes(currentText)) {
+      savedTexts.push(currentText);
+      localStorage.setItem('teleprompterTexts', JSON.stringify(savedTexts));
+      renderSavedTexts();
+    }
+    textContent.textContent = currentText;
+    textContent.style.fontSize = fontSizeControl.value + 'px';
+    setupScreen.classList.remove('active');
+    recordingScreen.classList.add('active');
+    startCamera();
+  });
+
+  // --- Назад к настройке ---
+  backBtn.addEventListener('click', () => {
+    recordingScreen.classList.remove('active');
+    setupScreen.classList.add('active');
+    stopCamera();
+  });
+
+  // --- Камера ---
+  async function startCamera() {
+    stopCamera();
+    const [w, h] = parseAspectRatio(aspectRatioSelect.value);
+    const constraints = {
+      video: {
+        facingMode: 'user',
+        width: { ideal: w },
+        height: { ideal: h }
+      },
+      audio: true
+    };
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      camera.srcObject = stream;
+
+      // Применяем CSS масштаб в зависимости от режима
+      applyAspectRatio(aspectRatioSelect.value);
+      startScrolling();
+    } catch (err) {
+      alert('Ошибка камеры/микрофона: ' + err.message);
+    }
+  }
+
+  function stopCamera() {
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+    if (scrollInterval) clearInterval(scrollInterval);
+  }
+
+  function parseAspectRatio(ratio) {
+    const [a, b] = ratio.split(':').map(Number);
+    if (ratio === '9:16') return [1080, 1920];
+    if (ratio === '16:9') return [1920, 1080];
+    if (ratio === '1:1') return [1080, 1080];
+    return [1280, 720];
+  }
+
+  function applyAspectRatio(ratio) {
+    // Для GitHub Pages и мобильных: просто меняем object-fit и padding
+    // Полноценная обрезка требует canvas — пока оставим как есть
+    if (ratio === '9:16') {
+      camera.style.objectFit = 'cover';
+    } else if (ratio === '1:1') {
+      camera.style.objectFit = 'cover';
+    } else {
+      camera.style.objectFit = 'cover';
+    }
+  }
+
+  aspectRatioSelect.addEventListener('change', () => {
+    if (stream) startCamera(); // перезапускаем с новым соотношением
+  });
+
+  // --- Прокрутка текста ---
+  function startScrolling() {
+    if (scrollInterval) clearInterval(scrollInterval);
+    const speed = parseFloat(speedControl.value);
+    const container = document.getElementById('overlay-text-container');
+    let topOffset = container.clientHeight * (parseFloat(textPositionControl.value) / 100);
+
+    scrollInterval = setInterval(() => {
+      topOffset -= speed;
+      textContent.style.transform = `translateY(${topOffset}px)`;
+      if (topOffset < -textContent.scrollHeight) {
+        topOffset = container.clientHeight * (parseFloat(textPositionControl.value) / 100);
+      }
+    }, 50);
+  }
+
+  speedControl.addEventListener('input', startScrolling);
+  fontSizeControl.addEventListener('input', () => {
+    textContent.style.fontSize = fontSizeControl.value + 'px';
+  });
+  textPositionControl.addEventListener('input', startScrolling);
+
+  // --- Запись ---
+  recordBtn.addEventListener('click', () => {
+    if (!stream) return;
+    recordedChunks = [];
+    
+    // Пытаемся использовать MP4, иначе WebM
+    const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=h264')
+      ? 'video/mp4;codecs=h264'
+      : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+        ? 'video/webm;codecs=vp9'
+        : 'video/webm';
+
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
+    mediaRecorder.ondataavailable = e => {
+      if (e.data.size) recordedChunks.push(e.data);
+    };
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(recordedChunks, { type: mimeType });
+      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `teleprompter-recording.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+    mediaRecorder.start();
+    recordBtn.disabled = true;
+    stopBtn.disabled = false;
+  });
+
+  stopBtn.addEventListener('click', () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+    stopBtn.disabled = true;
+    recordBtn.disabled = false;
+  });
+
+  // --- Очистка ---
+  window.addEventListener('beforeunload', stopCamera);
+</script>
+</body>
+</html>
