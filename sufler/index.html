@@ -142,6 +142,34 @@
       50% { opacity: 0.8; }
       100% { opacity: 1; }
     }
+
+    /* Панель настроек камеры */
+    #camera-settings {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.8);
+      padding: 12px;
+      border-radius: 10px;
+      max-width: 300px;
+      display: none;
+      z-index: 20;
+    }
+    #camera-settings.active {
+      display: block;
+    }
+    #camera-settings h3 {
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+    #camera-settings .setting-item {
+      margin: 6px 0;
+    }
+    #camera-settings label {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
   </style>
 </head>
 <body>
@@ -165,10 +193,19 @@
   <div id="overlay-text-container">
     <div id="text-content"></div>
   </div>
+
+  <!-- Панель настроек камеры (только на ПК) -->
+  <div id="camera-settings">
+    <h3>Настройки камеры</h3>
+    <div id="camera-settings-content"></div>
+  </div>
+
   <div id="recording-controls">
     <button id="backBtn">← Назад</button>
     <button id="recordBtn">⏺️ Записать</button>
     <button id="stopBtn" disabled>⏹️ Остановить</button>
+    <!-- Кнопка настроек (только на ПК) -->
+    <button id="cameraSettingsBtn" style="display: none;">🎥 Камера</button>
 
     <div class="slider-group">
       <label>Скорость:</label>
@@ -206,6 +243,7 @@
   let recordedChunks = [];
   let scrollInterval = null;
   let isRecording = false;
+  let videoTrack = null; // ← для настроек камеры
 
   // DOM
   const setupScreen = document.getElementById('setup-screen');
@@ -226,6 +264,14 @@
   const guide11 = document.getElementById('guide-1-1');
   const loadSampleBtn = document.getElementById('load-sample');
   const goToRecordingBtn = document.getElementById('go-to-recording');
+  const cameraSettingsBtn = document.getElementById('cameraSettingsBtn');
+  const cameraSettings = document.getElementById('camera-settings');
+  const cameraSettingsContent = document.getElementById('camera-settings-content');
+
+  // Показываем кнопку настроек только на ПК
+  if (!isMobile) {
+    cameraSettingsBtn.style.display = 'inline-block';
+  }
 
   // Сохранённые тексты
   function renderSavedTexts() {
@@ -243,7 +289,6 @@
     inputText.value = `Добро пожаловать в телесуфлер Pro!\nТекст теперь статичен до начала записи.\nПосле нажатия "Запись" он начнёт плавно скроллиться вверх.`;
   });
 
-  // === Переход к записи ===
   goToRecordingBtn.addEventListener('click', () => {
     currentText = inputText.value.trim();
     if (!currentText) { alert('Введите текст.'); return; }
@@ -260,30 +305,30 @@
     updateGuides();
   });
 
-  // === Назад ===
   backBtn.addEventListener('click', () => {
     recordingScreen.classList.remove('active');
     setupScreen.classList.add('active');
     stopCamera();
   });
 
-  // === Камера: адаптивное разрешение ===
+  // === Камера с адаптивным разрешением ===
   async function startCamera() {
     stopCamera();
-    
-    // Адаптивные настройки: 720p на мобиле, 1080p на ПК
     const videoConstraints = isMobile
       ? { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
       : { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } };
 
-    const constraints = {
-      video: videoConstraints,
-      audio: true
-    };
+    const constraints = { video: videoConstraints, audio: true };
 
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
       camera.srcObject = stream;
+      videoTrack = stream.getVideoTracks()[0]; // ← сохраняем трек
+      
+      // На ПК пытаемся загрузить настройки камеры
+      if (!isMobile && videoTrack && typeof videoTrack.getCapabilities === 'function') {
+        loadCameraSettings();
+      }
     } catch (err) {
       let msg = 'Не удалось получить доступ к камере/микрофону.';
       if (err.name === 'NotFoundError') msg = 'Камера или микрофон не найдены.';
@@ -296,12 +341,64 @@
     if (stream) {
       stream.getTracks().forEach(t => t.stop());
       stream = null;
+      videoTrack = null;
     }
     if (scrollInterval) {
       clearInterval(scrollInterval);
       scrollInterval = null;
     }
+    cameraSettings.classList.remove('active');
   }
+
+  // === Загрузка настроек камеры ===
+  function loadCameraSettings() {
+    try {
+      const capabilities = videoTrack.getCapabilities();
+      const settings = videoTrack.getSettings();
+      cameraSettingsContent.innerHTML = '';
+
+      const supported = ['zoom', 'focusDistance', 'exposureCompensation', 'brightness', 'contrast', 'saturation', 'whiteBalanceMode'];
+
+      let hasControls = false;
+
+      supported.forEach(prop => {
+        if (capabilities[prop]) {
+          hasControls = true;
+          const range = capabilities[prop];
+          const currentValue = settings[prop] || (prop === 'zoom' ? 1 : 0);
+
+          const div = document.createElement('div');
+          div.className = 'setting-item';
+          div.innerHTML = `
+            <label>${prop} (${range.min} – ${range.max})</label>
+            <input type="range" id="cam-${prop}" min="${range.min}" max="${range.max}" step="${range.step || 1}" value="${currentValue}">
+          `;
+          cameraSettingsContent.appendChild(div);
+
+          div.querySelector('input').addEventListener('input', async (e) => {
+            try {
+              const val = parseFloat(e.target.value);
+              const constraints = { advanced: [{ [prop]: val }] };
+              await videoTrack.applyConstraints(constraints);
+            } catch (err) {
+              console.warn('Не удалось применить настройку', prop, err);
+            }
+          });
+        }
+      });
+
+      if (hasControls) {
+        cameraSettingsBtn.style.display = 'inline-block';
+      }
+    } catch (err) {
+      console.warn('Настройки камеры недоступны', err);
+      cameraSettingsBtn.style.display = 'none';
+    }
+  }
+
+  cameraSettingsBtn.addEventListener('click', () => {
+    cameraSettings.classList.toggle('active');
+  });
 
   // === Рамки-гиды ===
   function updateGuides() {
@@ -339,7 +436,7 @@
   fontSizeControl.addEventListener('input', applyTextStyles);
   textWidthControl.addEventListener('input', applyTextStyles);
 
-  // === Прокрутка (только при записи) ===
+  // === Прокрутка ===
   function startScrolling() {
     if (scrollInterval) clearInterval(scrollInterval);
     const speed = parseFloat(speedControl.value);
@@ -422,7 +519,6 @@
     }
   });
 
-  // === Очистка ===
   window.addEventListener('beforeunload', stopCamera);
 </script>
 </body>
