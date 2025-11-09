@@ -8,11 +8,19 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      background: #000;
-      color: white;
       height: 100dvh;
       overflow: hidden;
       position: relative;
+    }
+
+    /* Темы */
+    body.theme-dark {
+      background: #000;
+      color: white;
+    }
+    body.theme-light {
+      background: #fff;
+      color: black;
     }
 
     .screen { display: none; height: 100%; }
@@ -73,7 +81,12 @@
       object-fit: cover;
       background: #000;
       transform-origin: center;
-      /* transform будет управляться JS */
+    }
+    #no-camera-placeholder {
+      display: none;
+      width: 100%;
+      height: 100%;
+      background: inherit;
     }
 
     /* Рамки для режимов */
@@ -86,7 +99,9 @@
       pointer-events: none;
       box-sizing: border-box;
       border: 2px dashed rgba(255,255,255,0.4);
-      display: none;
+    }
+    body.theme-light .aspect-guide {
+      border-color: rgba(0,0,0,0.4);
     }
 
     #overlay-text-container {
@@ -102,13 +117,19 @@
       padding-top: 20px;
     }
     #text-content {
-      color: white;
-      background: rgba(0, 0, 0, 0.6);
       padding: 16px;
       border-radius: 12px;
       text-align: center;
       line-height: 1.6;
       transform: translateY(0);
+    }
+    body.theme-dark #text-content {
+      color: white;
+      background: rgba(0, 0, 0, 0.6);
+    }
+    body.theme-light #text-content {
+      color: black;
+      background: rgba(255, 255, 255, 0.6);
     }
 
     #recording-controls {
@@ -116,7 +137,6 @@
       bottom: 0;
       left: 0;
       width: 100%;
-      background: rgba(0, 0, 0, 0.7);
       padding: 16px;
       display: flex;
       flex-wrap: wrap;
@@ -124,6 +144,13 @@
       justify-content: center;
       z-index: 10;
     }
+    body.theme-dark #recording-controls {
+      background: rgba(0, 0, 0, 0.7);
+    }
+    body.theme-light #recording-controls {
+      background: rgba(255, 255, 255, 0.7);
+    }
+
     .slider-group {
       display: flex;
       align-items: center;
@@ -134,7 +161,6 @@
       width: 100px;
     }
 
-    /* Индикатор записи */
     .recording {
       background: #e53935 !important;
       animation: pulse 1.5s infinite;
@@ -144,37 +170,9 @@
       50% { opacity: 0.8; }
       100% { opacity: 1; }
     }
-
-    /* Панель настроек камеры */
-    #camera-settings {
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      background: rgba(0,0,0,0.8);
-      padding: 12px;
-      border-radius: 10px;
-      max-width: 300px;
-      display: none;
-      z-index: 20;
-    }
-    #camera-settings.active {
-      display: block;
-    }
-    #camera-settings h3 {
-      margin-bottom: 10px;
-      font-size: 16px;
-    }
-    #camera-settings .setting-item {
-      margin: 6px 0;
-    }
-    #camera-settings label {
-      display: block;
-      font-size: 13px;
-      margin-bottom: 4px;
-    }
   </style>
 </head>
-<body>
+<body class="theme-dark">
 
 <!-- Setup Screen -->
 <div id="setup-screen" class="screen active">
@@ -184,12 +182,14 @@
   <div class="controls-row">
     <button id="load-sample">Загрузить пример</button>
     <button id="go-to-recording">Начать запись</button>
+    <button id="go-to-teleprompter-only">Только телесуфлер</button>
   </div>
 </div>
 
 <!-- Recording Screen -->
 <div id="recording-screen" class="screen">
   <video id="camera" autoplay playsinline muted></video>
+  <div id="no-camera-placeholder"></div>
   <div id="guide-9-16" class="aspect-guide"></div>
   <div id="guide-1-1" class="aspect-guide"></div>
   <div id="overlay-text-container">
@@ -242,7 +242,21 @@
         <option value="3840,2160">4K (3840×2160)</option>
       </select>
     </div>
+    <!-- Переключатель темы -->
+    <div class="slider-group">
+      <label>Тема:</label>
+      <select id="theme">
+        <option value="dark">Тёмная</option>
+        <option value="light">Светлая</option>
+      </select>
+    </div>
   </div>
+</div>
+
+<!-- Панель настроек камеры -->
+<div id="camera-settings" style="position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.8); padding: 12px; border-radius: 10px; max-width: 300px; display: none; z-index: 20;">
+  <h3>Настройки камеры</h3>
+  <div id="camera-settings-content"></div>
 </div>
 
 <script>
@@ -256,14 +270,17 @@
   let isRecording = false;
   let videoTrack = null;
   let currentResolution = isMobile ? [1280, 720] : [1920, 1080];
-  let currentScale = 1.0; // ← виртуальный масштаб
+  let currentScale = 1.0;
+  let isCameraMode = true; // true = с камерой, false = только телесуфлер
 
   // DOM
+  const body = document.body;
   const setupScreen = document.getElementById('setup-screen');
   const recordingScreen = document.getElementById('recording-screen');
   const inputText = document.getElementById('input-text');
   const savedList = document.getElementById('saved-list');
   const camera = document.getElementById('camera');
+  const noCameraPlaceholder = document.getElementById('no-camera-placeholder');
   const textContent = document.getElementById('text-content');
   const backBtn = document.getElementById('backBtn');
   const recordBtn = document.getElementById('recordBtn');
@@ -277,17 +294,25 @@
   const guide11 = document.getElementById('guide-1-1');
   const loadSampleBtn = document.getElementById('load-sample');
   const goToRecordingBtn = document.getElementById('go-to-recording');
+  const goToTeleprompterOnlyBtn = document.getElementById('go-to-teleprompter-only');
   const cameraSettingsBtn = document.getElementById('cameraSettingsBtn');
   const cameraSettings = document.getElementById('camera-settings');
   const cameraSettingsContent = document.getElementById('camera-settings-content');
   const resolutionControl = document.getElementById('resolution-control');
   const resolutionSelect = document.getElementById('resolution');
+  const themeSelect = document.getElementById('theme');
+
+  // Загрузка темы
+  const savedTheme = localStorage.getItem('teleprompterTheme') || 'dark';
+  body.className = `theme-${savedTheme}`;
+  themeSelect.value = savedTheme;
 
   if (!isMobile) {
     cameraSettingsBtn.style.display = 'inline-block';
     resolutionControl.style.display = 'flex';
   }
 
+  // Сохранённые тексты
   function renderSavedTexts() {
     savedList.innerHTML = '';
     savedTexts.forEach(text => {
@@ -303,7 +328,7 @@
     inputText.value = `Добро пожаловать в телесуфлер Pro!\nТекст теперь статичен до начала записи.\nПосле нажатия "Запись" он начнёт плавно скроллиться вверх.`;
   });
 
-  goToRecordingBtn.addEventListener('click', () => {
+  function enterRecordingMode(withCamera) {
     currentText = inputText.value.trim();
     if (!currentText) { alert('Введите текст.'); return; }
     if (!savedTexts.includes(currentText)) {
@@ -313,11 +338,31 @@
     }
     textContent.textContent = currentText;
     applyTextStyles();
+
+    isCameraMode = withCamera;
     setupScreen.classList.remove('active');
     recordingScreen.classList.add('active');
-    startCamera();
+
+    if (withCamera) {
+      startCamera();
+    } else {
+      // Режим без камеры
+      camera.style.display = 'none';
+      noCameraPlaceholder.style.display = 'block';
+      recordBtn.style.display = 'none';
+      stopBtn.style.display = 'none';
+      // Скрыть настройки камеры и качество
+      if (!isMobile) {
+        cameraSettingsBtn.style.display = 'none';
+        resolutionControl.style.display = 'none';
+      }
+      startScrolling(); // можно сразу скроллить в этом режиме
+    }
     updateGuides();
-  });
+  }
+
+  goToRecordingBtn.addEventListener('click', () => enterRecordingMode(true));
+  goToTeleprompterOnlyBtn.addEventListener('click', () => enterRecordingMode(false));
 
   backBtn.addEventListener('click', () => {
     recordingScreen.classList.remove('active');
@@ -336,12 +381,18 @@
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
       camera.srcObject = stream;
+      camera.style.display = 'block';
+      noCameraPlaceholder.style.display = 'none';
+      recordBtn.style.display = 'inline-block';
+      stopBtn.style.display = 'inline-block';
+      if (!isMobile) {
+        cameraSettingsBtn.style.display = 'inline-block';
+        resolutionControl.style.display = 'flex';
+      }
       videoTrack = stream.getVideoTracks()[0];
-      
       if (!isMobile && videoTrack && typeof videoTrack.getCapabilities === 'function') {
         loadCameraSettings();
       }
-      // Восстанавливаем последний масштаб
       camera.style.transform = `scale(${currentScale})`;
     } catch (err) {
       let msg = 'Не удалось получить доступ к камере/микрофону.';
@@ -364,23 +415,17 @@
     cameraSettings.classList.remove('active');
   }
 
-  // === Загрузка настроек + виртуальный масштаб ===
   function loadCameraSettings() {
     try {
       const capabilities = videoTrack ? videoTrack.getCapabilities() : {};
       cameraSettingsContent.innerHTML = '';
 
-      // Существующие настройки камеры
       const supported = ['zoom', 'focusDistance', 'exposureCompensation', 'brightness', 'contrast', 'saturation', 'whiteBalanceMode'];
-      let hasNativeControls = false;
-
       supported.forEach(prop => {
         if (capabilities[prop]) {
-          hasNativeControls = true;
           const range = capabilities[prop];
           const settings = videoTrack.getSettings();
           const currentValue = settings[prop] || (prop === 'zoom' ? 1 : 0);
-
           const div = document.createElement('div');
           div.className = 'setting-item';
           div.innerHTML = `
@@ -388,7 +433,6 @@
             <input type="range" id="cam-${prop}" min="${range.min}" max="${range.max}" step="${range.step || 1}" value="${currentValue}">
           `;
           cameraSettingsContent.appendChild(div);
-
           div.querySelector('input').addEventListener('input', async (e) => {
             try {
               const val = parseFloat(e.target.value);
@@ -400,7 +444,7 @@
         }
       });
 
-      // === Всегда добавляем виртуальный масштаб ===
+      // Виртуальный масштаб
       const scaleDiv = document.createElement('div');
       scaleDiv.className = 'setting-item';
       scaleDiv.innerHTML = `
@@ -408,17 +452,13 @@
         <input type="range" id="virtual-scale" min="0.6" max="1.5" step="0.05" value="${currentScale}">
       `;
       cameraSettingsContent.appendChild(scaleDiv);
-
       scaleDiv.querySelector('input').addEventListener('input', (e) => {
         currentScale = parseFloat(e.target.value);
         camera.style.transform = `scale(${currentScale})`;
       });
 
-      cameraSettingsBtn.style.display = 'inline-block';
-
     } catch (err) {
       console.warn('Ошибка загрузки настроек камеры', err);
-      // Но виртуальный масштаб всё равно добавим!
       cameraSettingsContent.innerHTML = `
         <div class="setting-item">
           <label>Виртуальный масштаб (0.6–1.5)</label>
@@ -429,7 +469,6 @@
         currentScale = parseFloat(e.target.value);
         camera.style.transform = `scale(${currentScale})`;
       });
-      cameraSettingsBtn.style.display = 'inline-block';
     }
   }
 
@@ -440,12 +479,20 @@
   resolutionSelect.addEventListener('change', () => {
     const [w, h] = resolutionSelect.value.split(',').map(Number);
     currentResolution = [w, h];
-    startCamera();
+    if (isCameraMode) startCamera();
+  });
+
+  themeSelect.addEventListener('change', () => {
+    const theme = themeSelect.value;
+    body.className = `theme-${theme}`;
+    localStorage.setItem('teleprompterTheme', theme);
   });
 
   function updateGuides() {
     guide916.style.display = 'none';
     guide11.style.display = 'none';
+    if (!isCameraMode) return; // рамки только с камерой
+
     const ratio = aspectRatioSelect.value;
     if (ratio === '9:16') {
       guide916.style.display = 'block';
@@ -494,7 +541,7 @@
   }
 
   textPositionControl.addEventListener('input', () => {
-    if (!isRecording) {
+    if (!isRecording || !isCameraMode) {
       const container = document.getElementById('overlay-text-container');
       const posPercent = parseFloat(textPositionControl.value);
       const topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
