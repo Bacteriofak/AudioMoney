@@ -13,7 +13,6 @@
       position: relative;
     }
 
-    /* Темы */
     body.theme-dark {
       background: #000;
       color: white;
@@ -89,7 +88,6 @@
       background: inherit;
     }
 
-    /* Рамки для режимов */
     .aspect-guide {
       position: absolute;
       top: 0;
@@ -196,7 +194,7 @@
     <div id="text-content"></div>
   </div>
 
-  <div id="camera-settings">
+  <div id="camera-settings" style="position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.8); padding: 12px; border-radius: 10px; max-width: 300px; display: none; z-index: 20;">
     <h3>Настройки камеры</h3>
     <div id="camera-settings-content"></div>
   </div>
@@ -205,6 +203,8 @@
     <button id="backBtn">← Назад</button>
     <button id="recordBtn">⏺️ Записать</button>
     <button id="stopBtn" disabled>⏹️ Остановить</button>
+    <button id="startPromptBtn" style="display:none;">▶️ Старт</button>
+    <button id="pausePromptBtn" style="display:none;">⏸️ Пауза</button>
     <button id="cameraSettingsBtn" style="display: none;">🎥 Камера</button>
 
     <div class="slider-group">
@@ -242,7 +242,6 @@
         <option value="3840,2160">4K (3840×2160)</option>
       </select>
     </div>
-    <!-- Переключатель темы -->
     <div class="slider-group">
       <label>Тема:</label>
       <select id="theme">
@@ -251,12 +250,6 @@
       </select>
     </div>
   </div>
-</div>
-
-<!-- Панель настроек камеры -->
-<div id="camera-settings" style="position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.8); padding: 12px; border-radius: 10px; max-width: 300px; display: none; z-index: 20;">
-  <h3>Настройки камеры</h3>
-  <div id="camera-settings-content"></div>
 </div>
 
 <script>
@@ -268,10 +261,11 @@
   let recordedChunks = [];
   let scrollInterval = null;
   let isRecording = false;
+  let isPromptRunning = false;
   let videoTrack = null;
   let currentResolution = isMobile ? [1280, 720] : [1920, 1080];
   let currentScale = 1.0;
-  let isCameraMode = true; // true = с камерой, false = только телесуфлер
+  let isCameraMode = true;
 
   // DOM
   const body = document.body;
@@ -285,6 +279,8 @@
   const backBtn = document.getElementById('backBtn');
   const recordBtn = document.getElementById('recordBtn');
   const stopBtn = document.getElementById('stopBtn');
+  const startPromptBtn = document.getElementById('startPromptBtn');
+  const pausePromptBtn = document.getElementById('pausePromptBtn');
   const speedControl = document.getElementById('speed');
   const fontSizeControl = document.getElementById('fontSize');
   const textPositionControl = document.getElementById('textPosition');
@@ -302,7 +298,7 @@
   const resolutionSelect = document.getElementById('resolution');
   const themeSelect = document.getElementById('theme');
 
-  // Загрузка темы
+  // Тема
   const savedTheme = localStorage.getItem('teleprompterTheme') || 'dark';
   body.className = `theme-${savedTheme}`;
   themeSelect.value = savedTheme;
@@ -325,7 +321,7 @@
   renderSavedTexts();
 
   loadSampleBtn.addEventListener('click', () => {
-    inputText.value = `Добро пожаловать в телесуфлер Pro!\nТекст теперь статичен до начала записи.\nПосле нажатия "Запись" он начнёт плавно скроллиться вверх.`;
+    inputText.value = `Добро пожаловать в телесуфлер Pro!\nЭтот текст поможет вам репетировать выступление.\nПросто нажмите "Старт", и текст начнёт плавно скроллиться вверх.`;
   });
 
   function enterRecordingMode(withCamera) {
@@ -336,28 +332,48 @@
       localStorage.setItem('teleprompterTexts', JSON.stringify(savedTexts));
       renderSavedTexts();
     }
+
+    isCameraMode = withCamera;
     textContent.textContent = currentText;
     applyTextStyles();
 
-    isCameraMode = withCamera;
     setupScreen.classList.remove('active');
     recordingScreen.classList.add('active');
 
     if (withCamera) {
+      // Скрыть кнопки телесуфлера
+      startPromptBtn.style.display = 'none';
+      pausePromptBtn.style.display = 'none';
+      // Показать запись
+      recordBtn.style.display = 'inline-block';
+      stopBtn.style.display = 'inline-block';
+      camera.style.display = 'block';
+      noCameraPlaceholder.style.display = 'none';
+      if (!isMobile) {
+        cameraSettingsBtn.style.display = 'inline-block';
+        resolutionControl.style.display = 'flex';
+      }
       startCamera();
     } else {
-      // Режим без камеры
+      // Режим телесуфлера
       camera.style.display = 'none';
       noCameraPlaceholder.style.display = 'block';
       recordBtn.style.display = 'none';
       stopBtn.style.display = 'none';
-      // Скрыть настройки камеры и качество
       if (!isMobile) {
         cameraSettingsBtn.style.display = 'none';
         resolutionControl.style.display = 'none';
       }
-      startScrolling(); // можно сразу скроллить в этом режиме
+      startPromptBtn.style.display = 'inline-block';
+      pausePromptBtn.style.display = 'none';
+      isPromptRunning = false;
     }
+
+    // Обновить позицию текста с небольшой задержкой
+    setTimeout(() => {
+      updateTextPosition();
+    }, 50);
+
     updateGuides();
   }
 
@@ -368,8 +384,64 @@
     recordingScreen.classList.remove('active');
     setupScreen.classList.add('active');
     stopCamera();
+    stopPrompt();
   });
 
+  function updateTextPosition() {
+    const container = document.getElementById('overlay-text-container');
+    if (!container || !textContent) return;
+
+    const posPercent = parseFloat(textPositionControl.value) || 0;
+    const topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
+    textContent.style.transform = `translateY(${topOffset}px)`;
+  }
+
+  textPositionControl.addEventListener('input', () => {
+    updateTextPosition();
+    if (!isRecording && !isPromptRunning) {
+      // Остановить прокрутку, если она была
+      if (scrollInterval) {
+        clearInterval(scrollInterval);
+        scrollInterval = null;
+      }
+    }
+  });
+
+  function startPrompt() {
+    if (scrollInterval) clearInterval(scrollInterval);
+    isPromptRunning = true;
+    startPromptBtn.style.display = 'none';
+    pausePromptBtn.style.display = 'inline-block';
+
+    const speed = parseFloat(speedControl.value);
+    const container = document.getElementById('overlay-text-container');
+    const posPercent = parseFloat(textPositionControl.value);
+    let topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
+
+    scrollInterval = setInterval(() => {
+      topOffset -= speed;
+      textContent.style.transform = `translateY(${topOffset}px)`;
+      if (topOffset < -textContent.scrollHeight * 2) {
+        topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
+      }
+    }, 50);
+  }
+
+  function stopPrompt() {
+    if (scrollInterval) {
+      clearInterval(scrollInterval);
+      scrollInterval = null;
+    }
+    isPromptRunning = false;
+    startPromptBtn.style.display = 'inline-block';
+    pausePromptBtn.style.display = 'none';
+    updateTextPosition(); // вернуть в исходную позицию
+  }
+
+  startPromptBtn.addEventListener('click', startPrompt);
+  pausePromptBtn.addEventListener('click', stopPrompt);
+
+  // === Камера и запись (без изменений в логике) ===
   async function startCamera() {
     stopCamera();
     const [width, height] = currentResolution;
@@ -381,14 +453,6 @@
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
       camera.srcObject = stream;
-      camera.style.display = 'block';
-      noCameraPlaceholder.style.display = 'none';
-      recordBtn.style.display = 'inline-block';
-      stopBtn.style.display = 'inline-block';
-      if (!isMobile) {
-        cameraSettingsBtn.style.display = 'inline-block';
-        resolutionControl.style.display = 'flex';
-      }
       videoTrack = stream.getVideoTracks()[0];
       if (!isMobile && videoTrack && typeof videoTrack.getCapabilities === 'function') {
         loadCameraSettings();
@@ -408,7 +472,7 @@
       stream = null;
       videoTrack = null;
     }
-    if (scrollInterval) {
+    if (scrollInterval && isRecording) {
       clearInterval(scrollInterval);
       scrollInterval = null;
     }
@@ -444,7 +508,6 @@
         }
       });
 
-      // Виртуальный масштаб
       const scaleDiv = document.createElement('div');
       scaleDiv.className = 'setting-item';
       scaleDiv.innerHTML = `
@@ -491,7 +554,7 @@
   function updateGuides() {
     guide916.style.display = 'none';
     guide11.style.display = 'none';
-    if (!isCameraMode) return; // рамки только с камерой
+    if (!isCameraMode) return;
 
     const ratio = aspectRatioSelect.value;
     if (ratio === '9:16') {
@@ -524,31 +587,7 @@
   fontSizeControl.addEventListener('input', applyTextStyles);
   textWidthControl.addEventListener('input', applyTextStyles);
 
-  function startScrolling() {
-    if (scrollInterval) clearInterval(scrollInterval);
-    const speed = parseFloat(speedControl.value);
-    const container = document.getElementById('overlay-text-container');
-    const posPercent = parseFloat(textPositionControl.value);
-    let topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
-
-    scrollInterval = setInterval(() => {
-      topOffset -= speed;
-      textContent.style.transform = `translateY(${topOffset}px)`;
-      if (topOffset < -textContent.scrollHeight * 2) {
-        topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
-      }
-    }, 50);
-  }
-
-  textPositionControl.addEventListener('input', () => {
-    if (!isRecording || !isCameraMode) {
-      const container = document.getElementById('overlay-text-container');
-      const posPercent = parseFloat(textPositionControl.value);
-      const topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
-      textContent.style.transform = `translateY(${topOffset}px)`;
-    }
-  });
-
+  // === Запись (без изменений) ===
   recordBtn.addEventListener('click', () => {
     if (!stream) {
       alert('Сначала дождитесь загрузки камеры.');
@@ -587,7 +626,7 @@
         clearInterval(scrollInterval);
         scrollInterval = null;
       }
-      textPositionControl.dispatchEvent(new Event('input'));
+      updateTextPosition();
     };
 
     mediaRecorder.start();
@@ -596,7 +635,20 @@
     recordBtn.textContent = '🔴 Идёт запись...';
     recordBtn.disabled = true;
     stopBtn.disabled = false;
-    startScrolling();
+
+    // Запустить прокрутку
+    if (scrollInterval) clearInterval(scrollInterval);
+    const speed = parseFloat(speedControl.value);
+    const container = document.getElementById('overlay-text-container');
+    const posPercent = parseFloat(textPositionControl.value);
+    let topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
+    scrollInterval = setInterval(() => {
+      topOffset -= speed;
+      textContent.style.transform = `translateY(${topOffset}px)`;
+      if (topOffset < -textContent.scrollHeight * 2) {
+        topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
+      }
+    }, 50);
   });
 
   stopBtn.addEventListener('click', () => {
@@ -605,7 +657,10 @@
     }
   });
 
-  window.addEventListener('beforeunload', stopCamera);
+  window.addEventListener('beforeunload', () => {
+    stopCamera();
+    stopPrompt();
+  });
 </script>
 </body>
 </html>
