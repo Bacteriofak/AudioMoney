@@ -201,10 +201,10 @@
 
   <div id="recording-controls">
     <button id="backBtn">← Назад</button>
-    <button id="recordBtn">⏺️ Записать</button>
-    <button id="stopBtn" disabled>⏹️ Остановить</button>
-    <button id="startPromptBtn" style="display:none;">▶️ Старт</button>
-    <button id="pausePromptBtn" style="display:none;">⏸️ Пауза</button>
+    <!-- ЕДИНАЯ КНОПКА ЗАПИСИ -->
+    <button id="recordToggleBtn">⏺️ Записать</button>
+    <!-- ЕДИНАЯ КНОПКА ТЕЛЕСУФЛЕРА -->
+    <button id="promptToggleBtn" style="display:none;">▶️ Старт</button>
     <button id="cameraSettingsBtn" style="display: none;">🎥 Камера</button>
 
     <div class="slider-group">
@@ -277,10 +277,8 @@
   const noCameraPlaceholder = document.getElementById('no-camera-placeholder');
   const textContent = document.getElementById('text-content');
   const backBtn = document.getElementById('backBtn');
-  const recordBtn = document.getElementById('recordBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const startPromptBtn = document.getElementById('startPromptBtn');
-  const pausePromptBtn = document.getElementById('pausePromptBtn');
+  const recordToggleBtn = document.getElementById('recordToggleBtn');
+  const promptToggleBtn = document.getElementById('promptToggleBtn');
   const speedControl = document.getElementById('speed');
   const fontSizeControl = document.getElementById('fontSize');
   const textPositionControl = document.getElementById('textPosition');
@@ -308,7 +306,6 @@
     resolutionControl.style.display = 'flex';
   }
 
-  // Сохранённые тексты
   function renderSavedTexts() {
     savedList.innerHTML = '';
     savedTexts.forEach(text => {
@@ -321,7 +318,7 @@
   renderSavedTexts();
 
   loadSampleBtn.addEventListener('click', () => {
-    inputText.value = `Добро пожаловать в телесуфлер Pro!\nЭтот текст поможет вам репетировать выступление.\nПросто нажмите "Старт", и текст начнёт плавно скроллиться вверх.`;
+    inputText.value = `Добро пожаловать в телесуфлер Pro!\nЭтот текст поможет вам репетировать выступление.\nНажмите "Старт", и текст начнёт плавно скроллиться вверх.`;
   });
 
   function enterRecordingMode(withCamera) {
@@ -341,10 +338,11 @@
     recordingScreen.classList.add('active');
 
     if (withCamera) {
-      startPromptBtn.style.display = 'none';
-      pausePromptBtn.style.display = 'none';
-      recordBtn.style.display = 'inline-block';
-      stopBtn.style.display = 'inline-block';
+      promptToggleBtn.style.display = 'none';
+      recordToggleBtn.style.display = 'inline-block';
+      recordToggleBtn.textContent = '⏺️ Записать';
+      recordToggleBtn.classList.remove('recording');
+      recordToggleBtn.disabled = false;
       camera.style.display = 'block';
       noCameraPlaceholder.style.display = 'none';
       if (!isMobile) {
@@ -355,22 +353,13 @@
     } else {
       camera.style.display = 'none';
       noCameraPlaceholder.style.display = 'block';
-      recordBtn.style.display = 'none';
-      stopBtn.style.display = 'none';
-      if (!isMobile) {
-        cameraSettingsBtn.style.display = 'none';
-        resolutionControl.style.display = 'none';
-      }
-      startPromptBtn.style.display = 'inline-block';
-      pausePromptBtn.style.display = 'none';
+      recordToggleBtn.style.display = 'none';
+      promptToggleBtn.style.display = 'inline-block';
+      promptToggleBtn.textContent = '▶️ Старт';
       isPromptRunning = false;
     }
 
-    // Обновить позицию с небольшой задержкой
-    setTimeout(() => {
-      updateTextPosition();
-    }, 50);
-
+    setTimeout(() => updateTextPosition(), 50);
     updateGuides();
   }
 
@@ -384,11 +373,10 @@
     stopPrompt();
   });
 
-  // === ИСПРАВЛЕНА: ПОЗИЦИОНИРОВАНИЕ ТЕКСТА ===
+  // === ПОЗИЦИОНИРОВАНИЕ ТЕКСТА (ИСПРАВЛЕНО) ===
   function updateTextPosition() {
     const container = document.getElementById('overlay-text-container');
     if (!container || !textContent) return;
-
     const posPercent = parseFloat(textPositionControl.value) || 0;
     const maxDownwardOffset = Math.max(0, container.clientHeight - textContent.scrollHeight);
     const topOffset = (posPercent / 100) * maxDownwardOffset;
@@ -397,19 +385,27 @@
 
   textPositionControl.addEventListener('input', () => {
     updateTextPosition();
-    if (!isRecording && !isPromptRunning) {
-      if (scrollInterval) {
-        clearInterval(scrollInterval);
-        scrollInterval = null;
-      }
+    if (!isRecording && !isPromptRunning && scrollInterval) {
+      clearInterval(scrollInterval);
+      scrollInterval = null;
+    }
+  });
+
+  // === УПРАВЛЕНИЕ ТЕЛЕСУФЛЕРОМ (ОДНА КНОПКА) ===
+  promptToggleBtn.addEventListener('click', () => {
+    if (isPromptRunning) {
+      // Остановить
+      stopPrompt();
+    } else {
+      // Запустить
+      startPrompt();
     }
   });
 
   function startPrompt() {
     if (scrollInterval) clearInterval(scrollInterval);
     isPromptRunning = true;
-    startPromptBtn.style.display = 'none';
-    pausePromptBtn.style.display = 'inline-block';
+    promptToggleBtn.textContent = '⏸️ Пауза';
 
     const speed = parseFloat(speedControl.value);
     const container = document.getElementById('overlay-text-container');
@@ -427,20 +423,85 @@
   }
 
   function stopPrompt() {
-    if (scrollInterval) {
-      clearInterval(scrollInterval);
-      scrollInterval = null;
-    }
+    if (scrollInterval) clearInterval(scrollInterval);
+    scrollInterval = null;
     isPromptRunning = false;
-    startPromptBtn.style.display = 'inline-block';
-    pausePromptBtn.style.display = 'none';
+    promptToggleBtn.textContent = '▶️ Старт';
     updateTextPosition();
   }
 
-  startPromptBtn.addEventListener('click', startPrompt);
-  pausePromptBtn.addEventListener('click', stopPrompt);
+  // === УПРАВЛЕНИЕ ЗАПИСЬЮ (ОДНА КНОПКА) ===
+  recordToggleBtn.addEventListener('click', () => {
+    if (isRecording) {
+      // Остановить запись
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+    } else {
+      // Начать запись
+      if (!stream) {
+        alert('Сначала дождитесь загрузки камеры.');
+        return;
+      }
 
-  // === Камера и запись ===
+      const hasAudio = stream.getAudioTracks().length > 0;
+      if (!hasAudio) {
+        if (!confirm('Микрофон недоступен. Записать только видео?')) return;
+      }
+
+      const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=h264')
+        ? 'video/mp4;codecs=h264'
+        : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+          ? 'video/webm;codecs=vp9'
+          : 'video/webm';
+
+      recordedChunks = [];
+      mediaRecorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorder.ondataavailable = e => { if (e.data.size) recordedChunks.push(e.data); };
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: mimeType });
+        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `teleprompter-recording.${ext}`;
+        a.click();
+        URL.revokeObjectURL(url);
+        isRecording = false;
+        recordToggleBtn.classList.remove('recording');
+        recordToggleBtn.textContent = '⏺️ Записать';
+        recordToggleBtn.disabled = false;
+        if (scrollInterval) {
+          clearInterval(scrollInterval);
+          scrollInterval = null;
+        }
+        updateTextPosition();
+      };
+
+      mediaRecorder.start();
+      isRecording = true;
+      recordToggleBtn.classList.add('recording');
+      recordToggleBtn.textContent = '⏹️ Остановить';
+      recordToggleBtn.disabled = false;
+
+      // Запустить прокрутку
+      if (scrollInterval) clearInterval(scrollInterval);
+      const speed = parseFloat(speedControl.value);
+      const container = document.getElementById('overlay-text-container');
+      const posPercent = parseFloat(textPositionControl.value) || 0;
+      const maxDownwardOffset = Math.max(0, container.clientHeight - textContent.scrollHeight);
+      let topOffset = (posPercent / 100) * maxDownwardOffset;
+      scrollInterval = setInterval(() => {
+        topOffset -= speed;
+        if (topOffset < -textContent.scrollHeight) {
+          topOffset = (posPercent / 100) * maxDownwardOffset;
+        }
+        textContent.style.transform = `translateY(${topOffset}px)`;
+      }, 50);
+    }
+  });
+
+  // === Камера и настройки (без изменений в логике) ===
   async function startCamera() {
     stopCamera();
     const [width, height] = currentResolution;
@@ -585,76 +646,6 @@
 
   fontSizeControl.addEventListener('input', applyTextStyles);
   textWidthControl.addEventListener('input', applyTextStyles);
-
-  // === Запись ===
-  recordBtn.addEventListener('click', () => {
-    if (!stream) {
-      alert('Сначала дождитесь загрузки камеры.');
-      return;
-    }
-
-    const hasAudio = stream.getAudioTracks().length > 0;
-    if (!hasAudio) {
-      if (!confirm('Микрофон недоступен. Записать только видео?')) return;
-    }
-
-    const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=h264')
-      ? 'video/mp4;codecs=h264'
-      : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-        ? 'video/webm;codecs=vp9'
-        : 'video/webm';
-
-    recordedChunks = [];
-    mediaRecorder = new MediaRecorder(stream, { mimeType });
-    mediaRecorder.ondataavailable = e => { if (e.data.size) recordedChunks.push(e.data); };
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(recordedChunks, { type: mimeType });
-      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `teleprompter-recording.${ext}`;
-      a.click();
-      URL.revokeObjectURL(url);
-      isRecording = false;
-      recordBtn.classList.remove('recording');
-      recordBtn.textContent = '⏺️ Записать';
-      recordBtn.disabled = false;
-      stopBtn.disabled = true;
-      if (scrollInterval) {
-        clearInterval(scrollInterval);
-        scrollInterval = null;
-      }
-      updateTextPosition();
-    };
-
-    mediaRecorder.start();
-    isRecording = true;
-    recordBtn.classList.add('recording');
-    recordBtn.textContent = '🔴 Идёт запись...';
-    recordBtn.disabled = true;
-    stopBtn.disabled = false;
-
-    if (scrollInterval) clearInterval(scrollInterval);
-    const speed = parseFloat(speedControl.value);
-    const container = document.getElementById('overlay-text-container');
-    const posPercent = parseFloat(textPositionControl.value) || 0;
-    const maxDownwardOffset = Math.max(0, container.clientHeight - textContent.scrollHeight);
-    let topOffset = (posPercent / 100) * maxDownwardOffset;
-    scrollInterval = setInterval(() => {
-      topOffset -= speed;
-      if (topOffset < -textContent.scrollHeight) {
-        topOffset = (posPercent / 100) * maxDownwardOffset;
-      }
-      textContent.style.transform = `translateY(${topOffset}px)`;
-    }, 50);
-  });
-
-  stopBtn.addEventListener('click', () => {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop();
-    }
-  });
 
   window.addEventListener('beforeunload', () => {
     stopCamera();
