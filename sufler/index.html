@@ -341,10 +341,8 @@
     recordingScreen.classList.add('active');
 
     if (withCamera) {
-      // Скрыть кнопки телесуфлера
       startPromptBtn.style.display = 'none';
       pausePromptBtn.style.display = 'none';
-      // Показать запись
       recordBtn.style.display = 'inline-block';
       stopBtn.style.display = 'inline-block';
       camera.style.display = 'block';
@@ -355,7 +353,6 @@
       }
       startCamera();
     } else {
-      // Режим телесуфлера
       camera.style.display = 'none';
       noCameraPlaceholder.style.display = 'block';
       recordBtn.style.display = 'none';
@@ -369,7 +366,7 @@
       isPromptRunning = false;
     }
 
-    // Обновить позицию текста с небольшой задержкой
+    // Обновить позицию с небольшой задержкой
     setTimeout(() => {
       updateTextPosition();
     }, 50);
@@ -387,19 +384,20 @@
     stopPrompt();
   });
 
+  // === ИСПРАВЛЕНА: ПОЗИЦИОНИРОВАНИЕ ТЕКСТА ===
   function updateTextPosition() {
     const container = document.getElementById('overlay-text-container');
     if (!container || !textContent) return;
 
     const posPercent = parseFloat(textPositionControl.value) || 0;
-    const topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
+    const maxDownwardOffset = Math.max(0, container.clientHeight - textContent.scrollHeight);
+    const topOffset = (posPercent / 100) * maxDownwardOffset;
     textContent.style.transform = `translateY(${topOffset}px)`;
   }
 
   textPositionControl.addEventListener('input', () => {
     updateTextPosition();
     if (!isRecording && !isPromptRunning) {
-      // Остановить прокрутку, если она была
       if (scrollInterval) {
         clearInterval(scrollInterval);
         scrollInterval = null;
@@ -415,15 +413,16 @@
 
     const speed = parseFloat(speedControl.value);
     const container = document.getElementById('overlay-text-container');
-    const posPercent = parseFloat(textPositionControl.value);
-    let topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
+    const posPercent = parseFloat(textPositionControl.value) || 0;
+    const maxDownwardOffset = Math.max(0, container.clientHeight - textContent.scrollHeight);
+    let topOffset = (posPercent / 100) * maxDownwardOffset;
 
     scrollInterval = setInterval(() => {
       topOffset -= speed;
-      textContent.style.transform = `translateY(${topOffset}px)`;
-      if (topOffset < -textContent.scrollHeight * 2) {
-        topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
+      if (topOffset < -textContent.scrollHeight) {
+        topOffset = (posPercent / 100) * maxDownwardOffset;
       }
+      textContent.style.transform = `translateY(${topOffset}px)`;
     }, 50);
   }
 
@@ -435,13 +434,13 @@
     isPromptRunning = false;
     startPromptBtn.style.display = 'inline-block';
     pausePromptBtn.style.display = 'none';
-    updateTextPosition(); // вернуть в исходную позицию
+    updateTextPosition();
   }
 
   startPromptBtn.addEventListener('click', startPrompt);
   pausePromptBtn.addEventListener('click', stopPrompt);
 
-  // === Камера и запись (без изменений в логике) ===
+  // === Камера и запись ===
   async function startCamera() {
     stopCamera();
     const [width, height] = currentResolution;
@@ -587,7 +586,7 @@
   fontSizeControl.addEventListener('input', applyTextStyles);
   textWidthControl.addEventListener('input', applyTextStyles);
 
-  // === Запись (без изменений) ===
+  // === Запись ===
   recordBtn.addEventListener('click', () => {
     if (!stream) {
       alert('Сначала дождитесь загрузки камеры.');
@@ -636,18 +635,18 @@
     recordBtn.disabled = true;
     stopBtn.disabled = false;
 
-    // Запустить прокрутку
     if (scrollInterval) clearInterval(scrollInterval);
     const speed = parseFloat(speedControl.value);
     const container = document.getElementById('overlay-text-container');
-    const posPercent = parseFloat(textPositionControl.value);
-    let topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
+    const posPercent = parseFloat(textPositionControl.value) || 0;
+    const maxDownwardOffset = Math.max(0, container.clientHeight - textContent.scrollHeight);
+    let topOffset = (posPercent / 100) * maxDownwardOffset;
     scrollInterval = setInterval(() => {
       topOffset -= speed;
-      textContent.style.transform = `translateY(${topOffset}px)`;
-      if (topOffset < -textContent.scrollHeight * 2) {
-        topOffset = -textContent.scrollHeight + (container.clientHeight * (posPercent / 100));
+      if (topOffset < -textContent.scrollHeight) {
+        topOffset = (posPercent / 100) * maxDownwardOffset;
       }
+      textContent.style.transform = `translateY(${topOffset}px)`;
     }, 50);
   });
 
