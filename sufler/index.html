@@ -126,10 +126,10 @@
       bottom: 0;
       left: 0;
       width: 100%;
-      padding: 16px;
+      padding: 12px;
       display: flex;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: 10px;
       justify-content: center;
       z-index: 10;
     }
@@ -138,6 +138,15 @@
     }
     body.theme-light #recording-controls {
       background: rgba(255, 255, 255, 0.7);
+    }
+
+    #controls-content {
+      width: 100%;
+      display: none; /* Скрыто по умолчанию */
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 10px;
     }
 
     .slider-group {
@@ -189,52 +198,55 @@
     <button id="backBtn">← Назад</button>
     <button id="recordToggleBtn">⏺️ Записать</button>
     <button id="promptToggleBtn" style="display:none;">▶️ Старт</button>
+    <button id="toggleControlsBtn">☰ Настройки</button>
 
-    <div class="slider-group">
-      <label>Скорость:</label>
-      <input type="range" id="speed" min="0.5" max="5" step="0.5" value="1">
-    </div>
-    <div class="slider-group">
-      <label>Размер:</label>
-      <input type="range" id="fontSize" min="16" max="64" value="32">
-    </div>
-    <div class="slider-group">
-      <label>Позиция:</label>
-      <input type="range" id="textPosition" min="0" max="100" value="0">
-    </div>
-    <div class="slider-group">
-      <label>Ширина:</label>
-      <input type="range" id="textWidth" min="20" max="100" value="80">
-    </div>
-    <div class="slider-group">
-      <label>Фон:</label>
-      <input type="range" id="bgOpacity" min="0" max="100" value="60">
-    </div>
-    <div class="slider-group">
-      <label>Режим:</label>
-      <select id="aspectRatio">
-        <option value="16:9" selected>Горизонтальный (YouTube)</option>
-        <option value="9:16">Вертикальный (Shorts/Reels)</option>
-        <option value="1:1">Квадрат (Instagram)</option>
-      </select>
-    </div>
-    <div class="slider-group" id="resolution-control" style="display: none;">
-      <label>Качество:</label>
-      <select id="resolution">
-        <option value="640,360">360p (640×360)</option>
-        <option value="854,480">480p (854×480)</option>
-        <option value="1280,720">720p (1280×720)</option>
-        <option value="1920,1080" selected>1080p (1920×1080)</option>
-        <option value="2560,1440">1440p (2560×1440)</option>
-        <option value="3840,2160">4K (3840×2160)</option>
-      </select>
-    </div>
-    <div class="slider-group">
-      <label>Тема:</label>
-      <select id="theme">
-        <option value="dark">Тёмная</option>
-        <option value="light">Светлая</option>
-      </select>
+    <div id="controls-content">
+      <div class="slider-group">
+        <label>Скорость:</label>
+        <input type="range" id="speed" min="0.5" max="5" step="0.5" value="1">
+      </div>
+      <div class="slider-group">
+        <label>Размер:</label>
+        <input type="range" id="fontSize" min="16" max="64" value="32">
+      </div>
+      <div class="slider-group">
+        <label>Позиция:</label>
+        <input type="range" id="textPosition" min="0" max="100" value="0">
+      </div>
+      <div class="slider-group">
+        <label>Ширина:</label>
+        <input type="range" id="textWidth" min="20" max="100" value="80">
+      </div>
+      <div class="slider-group">
+        <label>Фон:</label>
+        <input type="range" id="bgOpacity" min="0" max="100" value="60">
+      </div>
+      <div class="slider-group">
+        <label>Режим:</label>
+        <select id="aspectRatio">
+          <option value="16:9" selected>Горизонтальный (YouTube)</option>
+          <option value="9:16">Вертикальный (Shorts/Reels)</option>
+          <option value="1:1">Квадрат (Instagram)</option>
+        </select>
+      </div>
+      <div class="slider-group" id="resolution-control" style="display: none;">
+        <label>Качество:</label>
+        <select id="resolution">
+          <option value="640,360">360p (640×360)</option>
+          <option value="854,480">480p (854×480)</option>
+          <option value="1280,720">720p (1280×720)</option>
+          <option value="1920,1080" selected>1080p (1920×1080)</option>
+          <option value="2560,1440">1440p (2560×1440)</option>
+          <option value="3840,2160">4K (3840×2160)</option>
+        </select>
+      </div>
+      <div class="slider-group">
+        <label>Тема:</label>
+        <select id="theme">
+          <option value="dark">Тёмная</option>
+          <option value="light">Светлая</option>
+        </select>
+      </div>
     </div>
   </div>
 </div>
@@ -265,6 +277,8 @@
   const backBtn = document.getElementById('backBtn');
   const recordToggleBtn = document.getElementById('recordToggleBtn');
   const promptToggleBtn = document.getElementById('promptToggleBtn');
+  const toggleControlsBtn = document.getElementById('toggleControlsBtn'); // ← новая кнопка
+  const controlsContent = document.getElementById('controls-content'); // ← обёртка
   const speedControl = document.getElementById('speed');
   const fontSizeControl = document.getElementById('fontSize');
   const textPositionControl = document.getElementById('textPosition');
@@ -288,6 +302,8 @@
 
   if (!isMobile) {
     resolutionControl.style.display = 'flex';
+    // На ПК можно сразу показать настройки (опционально)
+    // controlsContent.style.display = 'flex';
   }
 
   function renderSavedTexts() {
@@ -302,7 +318,7 @@
   renderSavedTexts();
 
   loadSampleBtn.addEventListener('click', () => {
-    inputText.value = `Добро пожаловать в телесуфлер Pro!\nОтрегулируйте прозрачность фона под ваше освещение.\nТекст всегда останется читаемым.`;
+    inputText.value = `Добро пожаловать в телесуфлер Pro!\nНажмите "☰ Настройки", чтобы настроить текст.`;
   });
 
   function updateTextBackground() {
@@ -312,7 +328,6 @@
     textContent.style.background = `rgba(${bgColor}, ${opacity})`;
     localStorage.setItem('teleprompterBgOpacity', bgOpacityControl.value);
   }
-
   updateTextBackground();
 
   function enterRecordingMode(withCamera) {
@@ -335,23 +350,20 @@
     if (withCamera) {
       promptToggleBtn.style.display = 'none';
       recordToggleBtn.style.display = 'inline-block';
-      recordToggleBtn.textContent = '⏺️ Записать';
-      recordToggleBtn.classList.remove('recording');
-      recordToggleBtn.disabled = false;
       camera.style.display = 'block';
       noCameraPlaceholder.style.display = 'none';
-      if (!isMobile) {
-        resolutionControl.style.display = 'flex';
-      }
+      if (!isMobile) resolutionControl.style.display = 'flex';
       startCamera();
     } else {
       camera.style.display = 'none';
       noCameraPlaceholder.style.display = 'block';
       recordToggleBtn.style.display = 'none';
       promptToggleBtn.style.display = 'inline-block';
-      promptToggleBtn.textContent = '▶️ Старт';
-      isPromptRunning = false;
     }
+
+    // Скрыть настройки при входе (особенно на мобиле)
+    controlsContent.style.display = 'none';
+    toggleControlsBtn.textContent = '☰ Настройки';
 
     setTimeout(() => updateTextPosition(), 50);
     updateGuides();
@@ -367,6 +379,18 @@
     stopPrompt();
   });
 
+  // === Переключение меню настроек ===
+  toggleControlsBtn.addEventListener('click', () => {
+    if (controlsContent.style.display === 'flex') {
+      controlsContent.style.display = 'none';
+      toggleControlsBtn.textContent = '☰ Настройки';
+    } else {
+      controlsContent.style.display = 'flex';
+      toggleControlsBtn.textContent = '▲ Скрыть';
+    }
+  });
+
+  // === Остальной код без изменений в логике ===
   function updateTextPosition() {
     const container = document.getElementById('overlay-text-container');
     if (!container || !textContent) return;
